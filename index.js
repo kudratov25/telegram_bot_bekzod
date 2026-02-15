@@ -324,6 +324,7 @@ bot.action(/block_(.+)/, async (ctx) => {
 });
 // --- UNBLOCK HANDLER ---
 bot.action(/unblock_(.+)/, async (ctx) => {
+    log("Unblock action triggered for ID:", ctx.match[1]);
     if (ctx.from.id !== ADMIN_ID) return;
     const id = ctx.match[1];
 
