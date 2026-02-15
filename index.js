@@ -126,10 +126,18 @@ async function handleAdmin(ctx) {
 
 bot.action('admin_users', async (ctx) => {
     const users = await db.all('SELECT * FROM users');
-    let list = "👤 **Users:**\n";
-    users.forEach((u, i) => list += `${i+1}. ${u.name} (${u.blocked ? '🚫' : '✅'}) - \`${u.chatId}\`\n`);
+    if (users.length === 0) return ctx.answerCbQuery("No users found.");
+
+    // Create a button for each user
+    const buttons = users.map(u => [
+        Markup.button.callback(
+            `${u.blocked ? '🚫' : '👤'} ${u.name || 'No Name'} (${u.chatId})`,
+            `view_user:${u.chatId}`
+        )
+    ]);
+
     await ctx.answerCbQuery();
-    return ctx.replyWithMarkdown(list);
+    return ctx.reply("📂 **Select a user to see full details:**", Markup.inlineKeyboard(buttons));
 });
 
 bot.action('admin_export', async (ctx) => {
@@ -137,7 +145,7 @@ bot.action('admin_export', async (ctx) => {
     const data = await db.all('SELECT * FROM uploads');
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Data');
-    sheet.columns = [{header:'Name', key:'userName'}, {header:'ID', key:'chatId'}, {header:'File', key:'fileId'}];
+    sheet.columns = [{ header: 'Name', key: 'userName' }, { header: 'ID', key: 'chatId' }, { header: 'File', key: 'fileId' }];
     data.forEach(d => sheet.addRow(d));
     const buffer = await workbook.xlsx.writeBuffer();
     return ctx.replyWithDocument({ source: buffer, filename: 'data.xlsx' });
