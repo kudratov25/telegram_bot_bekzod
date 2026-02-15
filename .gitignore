@@ -1,0 +1,17 @@
+/node_modules
+database.sqlite
+database.sqlite-shm
+database.sqlite-wal
+.DS_Store
+.env
+dist
+build
+coverage
+logs
+*.log
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
