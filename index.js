@@ -8,7 +8,7 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_ID = Number(process.env.ADMIN_ID);
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
-// 1. Translation Dictionary
+// 1. Language Dictionary
 const strings = {
     '🇺🇿 UZ': {
         welcome: "Xush kelibsiz! Tilni tanlang:",
@@ -17,7 +17,8 @@ const strings = {
         askName: "Ismingiz nima?",
         askVideo: "Endi videoni yuklang:",
         done: "✅ Hammasi tayyor, rahmat!",
-        blocked: "🚫 Siz bloklangansiz."
+        blocked: "🚫 Siz bloklangansiz.",
+        adminMenu: "🛠 **Admin Paneli**\nQuyidagi amallardan birini tanlang:"
     },
     '🇷🇺 RU': {
         welcome: "Добро пожаловать! Выберите язык:",
@@ -26,7 +27,8 @@ const strings = {
         askName: "Как вас зовут?",
         askVideo: "Теперь загрузите видео:",
         done: "✅ Все готово, спасибо!",
-        blocked: "🚫 Вы заблокированы."
+        blocked: "🚫 Вы заблокированы.",
+        adminMenu: "🛠 **Админ Панель**\nВыберите действие:"
     },
     '🇺🇸 EN': {
         welcome: "Welcome! Choose your language:",
@@ -35,12 +37,14 @@ const strings = {
         askName: "What is your name?",
         askVideo: "Now upload the video:",
         done: "✅ All done, thank you!",
-        blocked: "🚫 You are blocked."
+        blocked: "🚫 You are blocked.",
+        adminMenu: "🛠 **Admin Control Panel**\nChoose an action:"
     }
 };
 
 let db;
 
+// 2. Database Initialization
 (async () => {
     db = await open({ filename: './database.sqlite', driver: sqlite3.Database });
     await db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
@@ -48,23 +52,24 @@ let db;
         CREATE TABLE IF NOT EXISTS users (chatId TEXT PRIMARY KEY, lang TEXT, phone TEXT, name TEXT, blocked INTEGER DEFAULT 0);
         CREATE TABLE IF NOT EXISTS uploads (id INTEGER PRIMARY KEY AUTOINCREMENT, chatId TEXT, userName TEXT, fileId TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);
     `);
-    console.log("🚀 Bot is live locally!");
+    console.log("🚀 Bot is live!");
 })();
 
 bot.use(session());
 
+// 3. Main Message Handler
 bot.on('message', async (ctx) => {
     const chatId = ctx.chat.id;
     const text = ctx.message.text;
 
-    if (chatId === ADMIN_ID && text?.startsWith('/admin')) return handleAdmin(ctx);
+    // Admin Access
+    if (chatId === ADMIN_ID && text === '/admin') return handleAdmin(ctx);
 
     const user = await db.get('SELECT * FROM users WHERE chatId = ?', [chatId]);
     if (user?.blocked) return ctx.reply(strings[user.lang || '🇺🇸 EN'].blocked);
 
     const step = ctx.session?.step;
 
-    // --- START / LANGUAGE SELECTION ---
     if (text === '/start') {
         ctx.session = { step: 'ASK_LANG' };
         return ctx.reply("Select Language / Tilni tanlang / Выберите язык:",
@@ -72,7 +77,6 @@ bot.on('message', async (ctx) => {
         );
     }
 
-    // --- STEP 1: SAVE LANGUAGE ---
     if (step === 'ASK_LANG' && strings[text]) {
         await db.run('INSERT OR REPLACE INTO users (chatId, lang) VALUES (?, ?)', [chatId, text]);
         ctx.session.step = 'ASK_PHONE';
@@ -81,106 +85,85 @@ bot.on('message', async (ctx) => {
         );
     }
 
-    // --- STEP 2: SAVE PHONE ---
     if (step === 'ASK_PHONE' && ctx.message.contact) {
-        const lang = user?.lang || '🇺🇸 EN';
         await db.run('UPDATE users SET phone = ? WHERE chatId = ?', [ctx.message.contact.phone_number, chatId]);
         ctx.session.step = 'ASK_NAME';
-        return ctx.reply(strings[lang].askName, Markup.removeKeyboard());
+        return ctx.reply(strings[user?.lang || '🇺🇸 EN'].askName, Markup.removeKeyboard());
     }
 
-    // --- STEP 3: SAVE NAME ---
     if (step === 'ASK_NAME' && text) {
-        const lang = user?.lang || '🇺🇸 EN';
         await db.run('UPDATE users SET name = ? WHERE chatId = ?', [text, chatId]);
         ctx.session.step = 'ASK_VIDEO';
-        return ctx.reply(strings[lang].askVideo);
+        return ctx.reply(strings[user?.lang || '🇺🇸 EN'].askVideo);
     }
 
-    // --- STEP 4: SAVE VIDEO ---
     if (step === 'ASK_VIDEO' && ctx.message.video) {
-        const lang = user?.lang || '🇺🇸 EN';
         const videoFileId = ctx.message.video.file_id;
-        const CHANNEL_ID = process.env.CHANNEL_ID;
-
         try {
-            // 1. Send the Video to your Channel
             await ctx.telegram.sendVideo(CHANNEL_ID, videoFileId, {
-                caption: `📹 **New Video Upload**\n\n👤 **User:** ${user.name || 'Unknown'}\n📞 **Phone:** ${user.phone || 'N/A'}\n🆔 **ID:** \`${chatId}\``,
+                caption: `📹 **New Upload**\n👤 User: ${user.name}\n📞 Phone: ${user.phone}\n🆔 ID: \`${chatId}\``,
                 parse_mode: 'Markdown'
             });
-
-            // 2. Save to Database
-            await db.run('INSERT INTO uploads (chatId, userName, fileId) VALUES (?, ?, ?)',
-                [chatId, user.name || 'Unknown', videoFileId]);
-
-            // 3. Success Message to User
+            await db.run('INSERT INTO uploads (chatId, userName, fileId) VALUES (?, ?, ?)', [chatId, user.name, videoFileId]);
             ctx.session.step = null;
-            return ctx.reply(strings[lang].done);
-
-        } catch (error) {
-            console.error("❌ Forwarding Error:", error.description);
-            return ctx.reply("⚠️ Error saving video. Please contact admin.");
+            return ctx.reply(strings[user.lang].done);
+        } catch (e) {
+            console.error(e);
+            return ctx.reply("❌ Error forwarding to channel. Check bot permissions.");
         }
     }
 });
 
+// 4. Admin Dashboard Logic
 async function handleAdmin(ctx) {
-    const text = ctx.message.text;
-    const args = text.split(' '); // Split command from arguments
-
-    // --- COMMAND: /admin_users ---
-    if (text === '/admin_users') {
-        const users = await db.all('SELECT * FROM users');
-        if (users.length === 0) return ctx.reply("No users registered yet.");
-
-        let userList = "👤 **Registered Users:**\n\n";
-        users.forEach((u, index) => {
-            const status = u.blocked ? "🚫 Blocked" : "✅ Active";
-            userList += `${index + 1}. **${u.name || 'No Name'}**\n`;
-            userList += `   ID: \`${u.chatId}\`\n`;
-            userList += `   Phone: ${u.phone || 'N/A'}\n`;
-            userList += `   Lang: ${u.lang}\n`;
-            userList += `   Status: ${status}\n\n`;
-        });
-
-        // If list is too long for one message, you might need to split it
-        return ctx.replyWithMarkdown(userList);
-    }
-
-    // --- COMMAND: /admin_block [chatId] ---
-    if (text.startsWith('/admin_block')) {
-        const targetId = args[1];
-        if (!targetId) return ctx.reply("Usage: /admin_block 12345678");
-
-        await db.run('UPDATE users SET blocked = 1 WHERE chatId = ?', [targetId]);
-        return ctx.reply(`User ${targetId} has been 🚫 **Blocked**.`);
-    }
-
-    // --- COMMAND: /admin_unblock [chatId] ---
-    if (text.startsWith('/admin_unblock')) {
-        const targetId = args[1];
-        if (!targetId) return ctx.reply("Usage: /admin_unblock 12345678");
-
-        await db.run('UPDATE users SET blocked = 0 WHERE chatId = ?', [targetId]);
-        return ctx.reply(`User ${targetId} has been ✅ **Unblocked**.`);
-    }
-
-    // --- COMMAND: /admin_export ---
-    if (text === '/admin_export') {
-        const data = await db.all('SELECT * FROM uploads');
-        const workbook = new ExcelJS.Workbook();
-        const sheet = workbook.addWorksheet('Uploads');
-        sheet.columns = [
-            { header: 'User Name', key: 'userName', width: 20 },
-            { header: 'User ID', key: 'chatId', width: 15 },
-            { header: 'File ID', key: 'fileId', width: 30 },
-            { header: 'Timestamp', key: 'timestamp', width: 25 }
-        ];
-        data.forEach(d => sheet.addRow(d));
-        const buffer = await workbook.xlsx.writeBuffer();
-        return ctx.replyWithDocument({ source: buffer, filename: 'users_data.xlsx' });
-    }
+    const menu = Markup.inlineKeyboard([
+        [Markup.button.callback('👥 Users List', 'admin_users')],
+        [Markup.button.callback('📥 Export Excel', 'admin_export')],
+        [Markup.button.callback('📢 Broadcast', 'admin_broadcast')]
+    ]);
+    return ctx.reply(strings['🇺🇸 EN'].adminMenu, menu);
 }
+
+bot.action('admin_users', async (ctx) => {
+    const users = await db.all('SELECT * FROM users');
+    let list = "👤 **Users:**\n";
+    users.forEach((u, i) => list += `${i+1}. ${u.name} (${u.blocked ? '🚫' : '✅'}) - \`${u.chatId}\`\n`);
+    await ctx.answerCbQuery();
+    return ctx.replyWithMarkdown(list);
+});
+
+bot.action('admin_export', async (ctx) => {
+    await ctx.answerCbQuery("Generating...");
+    const data = await db.all('SELECT * FROM uploads');
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Data');
+    sheet.columns = [{header:'Name', key:'userName'}, {header:'ID', key:'chatId'}, {header:'File', key:'fileId'}];
+    data.forEach(d => sheet.addRow(d));
+    const buffer = await workbook.xlsx.writeBuffer();
+    return ctx.replyWithDocument({ source: buffer, filename: 'data.xlsx' });
+});
+
+bot.action('admin_broadcast', (ctx) => {
+    ctx.session.step = 'BROADCAST_WAIT';
+    ctx.answerCbQuery();
+    return ctx.reply("Type the message you want to send to ALL users:");
+});
+
+// Broadcast logic handler
+bot.on('text', async (ctx, next) => {
+    if (ctx.session?.step === 'BROADCAST_WAIT' && ctx.from.id === ADMIN_ID) {
+        const users = await db.all('SELECT chatId FROM users');
+        let count = 0;
+        for (const u of users) {
+            try {
+                await ctx.telegram.sendMessage(u.chatId, ctx.message.text);
+                count++;
+            } catch (e) { console.log(`Failed for ${u.chatId}`); }
+        }
+        ctx.session.step = null;
+        return ctx.reply(`📢 Broadcast complete! Sent to ${count} users.`);
+    }
+    return next();
+});
 
 bot.launch();
