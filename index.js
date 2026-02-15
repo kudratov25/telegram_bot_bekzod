@@ -359,6 +359,7 @@ bot.action('admin_export', async (ctx) => {
     sheet.columns = [
         { header: 'Name', key: 'userName' },
         { header: 'Chat ID', key: 'chatId' },
+        { header: 'Phone', key: 'phone' },
         { header: 'File ID', key: 'fileId' }
     ];
 
