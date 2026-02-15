@@ -270,15 +270,52 @@ bot.action(/info_(.+)/, async (ctx) => {
 
 bot.action(/block_(.+)/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
-    await db.run('UPDATE users SET blocked=1 WHERE chatId=?', [ctx.match[1]]);
-    ctx.answerCbQuery("Blocked");
+
+    const id = ctx.match[1];
+    if (Number(id) === ADMIN_ID)
+        return ctx.answerCbQuery("❌ Cannot block yourself.");
+
+    await db.run('UPDATE users SET blocked=1 WHERE chatId=?', [id]);
+
+    const user = await getUser(id);
+
+    await ctx.answerCbQuery("User blocked");
+
+    return ctx.editMessageText(
+`👤 Name: ${user.name}
+📞 Phone: ${user.phone}
+🌍 Lang: ${user.lang}
+🛡 Status: 🚫 Blocked`,
+        Markup.inlineKeyboard([
+            [Markup.button.callback('✅ Unblock', `unblock_${id}`)]
+        ])
+    );
 });
 
 bot.action(/unblock_(.+)/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
-    await db.run('UPDATE users SET blocked=0 WHERE chatId=?', [ctx.match[1]]);
-    ctx.answerCbQuery("Unblocked");
+
+    const id = ctx.match[1];
+    if (Number(id) === ADMIN_ID)
+        return ctx.answerCbQuery("❌ Cannot modify yourself.");
+
+    await db.run('UPDATE users SET blocked=0 WHERE chatId=?', [id]);
+
+    const user = await getUser(id);
+
+    await ctx.answerCbQuery("User unblocked");
+
+    return ctx.editMessageText(
+`👤 Name: ${user.name}
+📞 Phone: ${user.phone}
+🌍 Lang: ${user.lang}
+🛡 Status: ✅ Active`,
+        Markup.inlineKeyboard([
+            [Markup.button.callback('🚫 Block', `block_${id}`)]
+        ])
+    );
 });
+
 
 bot.action('admin_export', async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
