@@ -254,7 +254,7 @@ async function showAdmin(ctx) {
         Markup.inlineKeyboard([
             [Markup.button.callback('👥 Users', 'admin_users')],
             [Markup.button.callback('📥 Export', 'admin_export')],
-            [Markup.button.callback('📢 Broadcast', 'admin_broadcast')]
+            // [Markup.button.callback('📢 Broadcast', 'admin_broadcast')]
         ])
     );
 }
