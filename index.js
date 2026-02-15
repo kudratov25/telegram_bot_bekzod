@@ -194,22 +194,45 @@ bot.on('message', async (ctx) => {
     /* ADMIN COMMAND */
     if (chatId === ADMIN_ID && text === '/admin') {
         return showAdmin(ctx);
-    }
-
-    /* BROADCAST */
+    }/* BROADCAST */
     if (ctx.session?.step === 'BROADCAST' && chatId === ADMIN_ID) {
-        const users = await db.all('SELECT chatId FROM users');
-        let count = 0;
+
+        const user = await getUser(chatId);
+        const lang = user?.lang || '🇺🇸 EN';
+
+        // Cancel
+        if (text === '❌ Cancel') {
+            ctx.session = null;
+            return ctx.reply("❌ Cancelled.", Markup.removeKeyboard());
+        }
+
+        if (!text) return;
+
+        const users = await db.all(
+            'SELECT chatId FROM users WHERE blocked = 0'
+        );
+
+        let success = 0;
+        let failed = 0;
 
         for (const u of users) {
             try {
                 await ctx.telegram.sendMessage(u.chatId, text);
-                count++;
-            } catch { }
+                success++;
+            } catch {
+                failed++;
+            }
         }
 
         ctx.session = null;
-        return ctx.reply(strings['🇺🇸 EN'].broadcastDone(count));
+
+        return ctx.reply(
+            `📢 Broadcast finished
+
+✅ Sent: ${success}
+❌ Failed: ${failed}`,
+            Markup.removeKeyboard()
+        );
     }
 });
 
