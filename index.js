@@ -324,33 +324,31 @@ bot.action(/block_(.+)/, async (ctx) => {
         ctx.reply("Error blocking user.");
     }
 });
-// --- UNBLOCK HANDLER ---
 bot.action(/unblock_(.+)/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     const id = ctx.match[1];
 
     try {
-        // 1. Update DB
         await db.run('UPDATE users SET blocked = 0 WHERE chatId = ?', [id]);
-
-        // 2. Fetch fresh data
         const user = await getUser(id);
 
         await ctx.answerCbQuery("User unblocked ✅");
 
-        // 3. Force the UI to flip the button back to "Block"
+        // Overwrite keyboard fully
         return ctx.editMessageText(
             `👤 Name: ${user.name || 'N/A'}
 📞 Phone: ${user.phone || 'N/A'}
-🌍 Lang: ${user.lang}
-🛡 Status: ✅ Active`, // Text must be different from the "Blocked" state text
+🌍 Lang: ${user.lang || 'N/A'}
+🛡 Status: ✅ Active`,
             {
-                ...Markup.inlineKeyboard([
-                    [Markup.button.callback('🚫 Block', `block_${id}`)],
-                    [Markup.button.callback('⬅️ Back to List', 'admin_users')]
-                ])
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '🚫 Block', callback_data: `block_${id}` }],
+                        [{ text: '⬅️ Back to List', callback_data: 'admin_users' }]
+                    ]
+                }
             }
-        );
+        ).catch(() => { });
     } catch (err) {
         console.error("Unblock Error:", err);
         ctx.reply("Error unblocking user.");
