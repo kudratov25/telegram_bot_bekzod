@@ -1,10 +1,12 @@
+require('dotenv').config(); // Load environment variables
 const { Telegraf, Markup, session } = require('telegraf');
 const sqlite3 = require('sqlite3');
 const { open } = require('sqlite');
 const ExcelJS = require('exceljs');
 
-const bot = new Telegraf('8256004519:AAHo1m0KEQ8q2UG6T8mNf3CUOKUBZoSkijM');
-const ADMIN_ID = 123456789; // YOUR TELEGRAM ID
+const bot = new Telegraf(process.env.BOT_TOKEN);
+const ADMIN_ID = Number(process.env.ADMIN_ID);
+
 
 let db;
 
