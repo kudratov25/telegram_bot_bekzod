@@ -195,13 +195,13 @@ bot.on('message', async (ctx) => {
     if (chatId === ADMIN_ID && text === '/admin') {
         return showAdmin(ctx);
     }
-    /* BROADCAST */
+    // ──────────────────────────────────────────────
+    // Replace your current broadcast block with this:
+    // ──────────────────────────────────────────────
+
     if (ctx.session?.step === 'BROADCAST' && chatId === ADMIN_ID) {
 
-        const user = await getUser(chatId);
-        const lang = user?.lang || '🇺🇸 EN';
-
-        // Cancel
+        // Optional: let admin cancel
         if (text === '❌ Cancel') {
             ctx.session = null;
             return ctx.reply("❌ Cancelled.", Markup.removeKeyboard());
@@ -214,27 +214,31 @@ bot.on('message', async (ctx) => {
         let success = 0;
         let failed = 0;
 
+        // Important: remember the message we want to broadcast
+        const messageToForward = ctx.message;
+
+        // Clear session **before** the long loop (prevents re-trigger on next messages)
+        ctx.session = null;
+
+        // Now do the heavy work
         for (const u of users) {
             try {
-                // Forward ANY message type
                 await ctx.telegram.copyMessage(
                     u.chatId,
-                    chatId,
-                    ctx.message.message_id
+                    messageToForward.chat.id,
+                    messageToForward.message_id
                 );
                 success++;
-            } catch {
+            } catch (err) {
                 failed++;
+                console.error(`Failed to send to ${u.chatId}:`, err.message);
             }
         }
 
-        ctx.session = null;
-
         return ctx.reply(
-            `📢 Broadcast finished
-
-        ✅ Sent: ${success}
-        ❌ Failed: ${failed}`,
+            `📢 Broadcast finished\n\n` +
+            `✅ Sent: ${success}\n` +
+            `❌ Failed: ${failed}`,
             Markup.removeKeyboard()
         );
     }
