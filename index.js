@@ -314,7 +314,6 @@ bot.action(/block_(.+)/, async (ctx) => {
         return ctx.editMessageText(
             `👤 Name: ${user.name || 'N/A'}\n📞 Phone: ${user.phone || 'N/A'}\n🌍 Lang: ${user.lang}\n🛡 Status: 🚫 Blocked`,
             {
-                parse_mode: 'Markdown',
                 ...Markup.inlineKeyboard([[Markup.button.callback('✅ Unblock', `unblock_${id}`)]])
             }
         ).catch(() => { }); // Catch "message not modified" errors
@@ -344,9 +343,8 @@ bot.action(/unblock_(.+)/, async (ctx) => {
 🌍 Lang: ${user.lang}
 🛡 Status: ✅ Active`, // Text must be different from the "Blocked" state text
             {
-                parse_mode: 'Markdown',
                 ...Markup.inlineKeyboard([
-                    [Markup.button.callback('🚫 Block', `block_${id}`)], // Ensure this points to block_
+                    [Markup.button.callback('🚫 Block', `block_${id}`)],
                     [Markup.button.callback('⬅️ Back to List', 'admin_users')]
                 ])
             }
