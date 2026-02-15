@@ -299,53 +299,52 @@ bot.action(/info_(.+)/, async (ctx) => {
         ])
     );
 });
-
+// --- BLOCK HANDLER ---
 bot.action(/block_(.+)/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
-
     const id = ctx.match[1];
-    if (Number(id) === ADMIN_ID)
-        return ctx.answerCbQuery("❌ Cannot block yourself.");
 
-    await db.run('UPDATE users SET blocked=1 WHERE chatId=?', [id]);
+    if (Number(id) === ADMIN_ID) return ctx.answerCbQuery("❌ Cannot block yourself.");
 
-    const user = await getUser(id);
+    try {
+        await db.run('UPDATE users SET blocked = 1 WHERE chatId = ?', [id]);
+        const user = await getUser(id); // Using the helper function above
 
-    await ctx.answerCbQuery("User blocked");
-
-    return ctx.editMessageText(
-        `👤 Name: ${user.name}
-📞 Phone: ${user.phone}
-🌍 Lang: ${user.lang}
-🛡 Status: 🚫 Blocked`,
-        Markup.inlineKeyboard([
-            [Markup.button.callback('✅ Unblock', `unblock_${id}`)]
-        ])
-    );
+        await ctx.answerCbQuery("User blocked 🚫");
+        return ctx.editMessageText(
+            `👤 Name: ${user.name || 'N/A'}\n📞 Phone: ${user.phone || 'N/A'}\n🌍 Lang: ${user.lang}\n🛡 Status: 🚫 Blocked`,
+            {
+                parse_mode: 'Markdown',
+                ...Markup.inlineKeyboard([[Markup.button.callback('✅ Unblock', `unblock_${id}`)]])
+            }
+        ).catch(() => { }); // Catch "message not modified" errors
+    } catch (err) {
+        console.error(err);
+        ctx.reply("Error blocking user.");
+    }
 });
 
+// --- UNBLOCK HANDLER ---
 bot.action(/unblock_(.+)/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
-
     const id = ctx.match[1];
-    if (Number(id) === ADMIN_ID)
-        return ctx.answerCbQuery("❌ Cannot modify yourself.");
 
-    await db.run('UPDATE users SET blocked=0 WHERE chatId=?', [id]);
+    try {
+        await db.run('UPDATE users SET blocked = 0 WHERE chatId = ?', [id]);
+        const user = await getUser(id); // Using the helper function above
 
-    const user = await getUser(id);
-
-    await ctx.answerCbQuery("User unblocked");
-
-    return ctx.editMessageText(
-        `👤 Name: ${user.name}
-📞 Phone: ${user.phone}
-🌍 Lang: ${user.lang}
-🛡 Status: ✅ Active`,
-        Markup.inlineKeyboard([
-            [Markup.button.callback('🚫 Block', `block_${id}`)]
-        ])
-    );
+        await ctx.answerCbQuery("User unblocked ✅");
+        return ctx.editMessageText(
+            `👤 Name: ${user.name || 'N/A'}\n📞 Phone: ${user.phone || 'N/A'}\n🌍 Lang: ${user.lang}\n🛡 Status: ✅ Active`,
+            {
+                parse_mode: 'Markdown',
+                ...Markup.inlineKeyboard([[Markup.button.callback('🚫 Block', `block_${id}`)]])
+            }
+        ).catch(() => { });
+    } catch (err) {
+        console.error(err);
+        ctx.reply("Error unblocking user.");
+    }
 });
 
 bot.action('admin_export', async (ctx) => {
