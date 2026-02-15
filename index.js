@@ -282,7 +282,7 @@ bot.action(/block_(.+)/, async (ctx) => {
     await ctx.answerCbQuery("User blocked");
 
     return ctx.editMessageText(
-`👤 Name: ${user.name}
+        `👤 Name: ${user.name}
 📞 Phone: ${user.phone}
 🌍 Lang: ${user.lang}
 🛡 Status: 🚫 Blocked`,
@@ -306,7 +306,7 @@ bot.action(/unblock_(.+)/, async (ctx) => {
     await ctx.answerCbQuery("User unblocked");
 
     return ctx.editMessageText(
-`👤 Name: ${user.name}
+        `👤 Name: ${user.name}
 📞 Phone: ${user.phone}
 🌍 Lang: ${user.lang}
 🛡 Status: ✅ Active`,
@@ -338,9 +338,18 @@ bot.action('admin_export', async (ctx) => {
 
 bot.action('admin_broadcast', async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
+
+    const user = await getUser(ctx.from.id);
+    const lang = user?.lang || '🇺🇸 EN';
+
     ctx.session.step = 'BROADCAST';
-    ctx.answerCbQuery();
-    ctx.reply(strings['🇺🇸 EN'].broadcastAsk);
+
+    await ctx.answerCbQuery();
+
+    return ctx.reply(
+        strings[lang].broadcastAsk,
+        Markup.keyboard([['❌ Cancel']]).resize()
+    );
 });
 
 /* ===========================
