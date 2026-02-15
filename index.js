@@ -276,7 +276,6 @@ bot.action('admin_users', async (ctx) => {
     await ctx.answerCbQuery();
     return ctx.reply("Users:", Markup.inlineKeyboard(buttons));
 });
-
 bot.action(/info_(.+)/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
 
@@ -284,24 +283,26 @@ bot.action(/info_(.+)/, async (ctx) => {
     const user = await getUser(id);
 
     const text =
-        `👤 Name: ${user.name}
-📞 Phone: ${user.phone}
-🌍 Lang: ${user.lang}
-🛡 Status: ${user.blocked ? 'Blocked' : 'Active'}`;
+        `👤 Name: ${user.name || 'N/A'}
+📞 Phone: ${user.phone || 'N/A'}
+🌍 Lang: ${user.lang || 'N/A'}
+🛡 Status: ${user.blocked ? '🚫 Blocked' : '✅ Active'}`;
 
-    return ctx.reply(text,
-        Markup.inlineKeyboard([
+    return ctx.editMessageText(text, {
+        ...Markup.inlineKeyboard([
             [
                 user.blocked
                     ? Markup.button.callback('✅ Unblock', `unblock_${id}`)
                     : Markup.button.callback('🚫 Block', `block_${id}`)
             ]
         ])
-    );
+    }).catch(() => { });
 });
+
+
+
 // --- BLOCK HANDLER ---
 bot.action(/block_(.+)/, async (ctx) => {
-    log("Block action triggered for ID:", ctx.match[1]);
     if (ctx.from.id !== ADMIN_ID) return;
     const id = ctx.match[1];
 
@@ -325,7 +326,6 @@ bot.action(/block_(.+)/, async (ctx) => {
 });
 // --- UNBLOCK HANDLER ---
 bot.action(/unblock_(.+)/, async (ctx) => {
-    log("Unblock action triggered for ID:", ctx.match[1]);
     if (ctx.from.id !== ADMIN_ID) return;
     const id = ctx.match[1];
 
