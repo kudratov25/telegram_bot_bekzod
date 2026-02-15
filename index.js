@@ -301,6 +301,7 @@ bot.action(/info_(.+)/, async (ctx) => {
 });
 // --- BLOCK HANDLER ---
 bot.action(/block_(.+)/, async (ctx) => {
+    log("Block action triggered for ID:", ctx.match[1]);
     if (ctx.from.id !== ADMIN_ID) return;
     const id = ctx.match[1];
 
