@@ -100,30 +100,28 @@ bot.on('message', async (ctx) => {
     // --- STEP 4: SAVE VIDEO ---
     if (step === 'ASK_VIDEO' && ctx.message.video) {
         const lang = user?.lang || '🇺🇸 EN';
+        const videoFileId = ctx.message.video.file_id;
+        const CHANNEL_ID = process.env.CHANNEL_ID;
 
-        // 1. Save to Database
-        await db.run('INSERT INTO uploads (chatId, userName, fileId) VALUES (?, ?, ?)',
-            [chatId, user.name || 'Unknown', ctx.message.video.file_id]);
-
-        // 2. FORWARD to the Channel
         try {
-            await ctx.telegram.forwardMessage(
-                CHANNEL_ID,      // Destination
-                ctx.chat.id,     // From this chat
-                ctx.message.message_id // This specific message
-            );
+            // 1. Send the Video to your Channel
+            await ctx.telegram.sendVideo(CHANNEL_ID, videoFileId, {
+                caption: `📹 **New Video Upload**\n\n👤 **User:** ${user.name || 'Unknown'}\n📞 **Phone:** ${user.phone || 'N/A'}\n🆔 **ID:** \`${chatId}\``,
+                parse_mode: 'Markdown'
+            });
 
-            // 3. (Optional) Send a text info block to the channel too
-            await ctx.telegram.sendMessage(CHANNEL_ID,
-                `👤 User: ${user.name}\n📞 Phone: ${user.phone}\n🆔 ID: ${chatId}`
-            );
+            // 2. Save to Database
+            await db.run('INSERT INTO uploads (chatId, userName, fileId) VALUES (?, ?, ?)',
+                [chatId, user.name || 'Unknown', videoFileId]);
+
+            // 3. Success Message to User
+            ctx.session.step = null;
+            return ctx.reply(strings[lang].done);
 
         } catch (error) {
-            console.error("Forwarding failed:", error);
+            console.error("❌ Forwarding Error:", error.description);
+            return ctx.reply("⚠️ Error saving video. Please contact admin.");
         }
-
-        ctx.session.step = null;
-        return ctx.reply(strings[lang].done);
     }
 });
 
