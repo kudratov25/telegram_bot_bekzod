@@ -246,25 +246,28 @@ bot.on('message', async (ctx) => {
 });
 
 /* ===========================
-   ADMIN PANEL
+   ADMIN PANEL FULL
 =========================== */
 
 async function showAdmin(ctx) {
-    return ctx.reply(strings['🇺🇸 EN'].adminMenu,
-        Markup.inlineKeyboard([
-            [Markup.button.callback('👥 Users', 'admin_users')],
-            [Markup.button.callback('📥 Export', 'admin_export')],
-            // [Markup.button.callback('📢 Broadcast', 'admin_broadcast')]
-        ])
-    );
+    if (ctx.from.id !== ADMIN_ID) return;
+
+    return ctx.editMessageText?.("🛠 Admin panel:")
+        || ctx.reply("🛠 Admin panel:",
+            Markup.inlineKeyboard([
+                [Markup.button.callback('👥 Users', 'admin_users')],
+                [Markup.button.callback('📥 Export', 'admin_export')],
+                [Markup.button.callback('📢 Broadcast', 'admin_broadcast')]
+            ])
+        );
 }
 
+// ── Users List ──
 bot.action('admin_users', async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
 
     const users = await db.all('SELECT * FROM users');
-    if (!users.length)
-        return ctx.answerCbQuery("No users.");
+    if (!users.length) return ctx.answerCbQuery("No users.");
 
     const buttons = users.map(u => [
         Markup.button.callback(
@@ -274,13 +277,21 @@ bot.action('admin_users', async (ctx) => {
     ]);
 
     await ctx.answerCbQuery();
-    return ctx.reply("Users:", Markup.inlineKeyboard(buttons));
+
+    // Edit current message instead of replying
+    return ctx.editMessageText("📂 Users:", {
+        reply_markup: { inline_keyboard: buttons }
+    }).catch(() => { });
 });
+
+// ── User Info ──
 bot.action(/info_(.+)/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
-
     const id = ctx.match[1];
     const user = await getUser(id);
+    if (!user) return ctx.answerCbQuery("User not found.");
+
+    await ctx.answerCbQuery();
 
     const text =
         `👤 Name: ${user.name || 'N/A'}
@@ -289,41 +300,50 @@ bot.action(/info_(.+)/, async (ctx) => {
 🛡 Status: ${user.blocked ? '🚫 Blocked' : '✅ Active'}`;
 
     return ctx.editMessageText(text, {
-        ...Markup.inlineKeyboard([
-            [
-                user.blocked
-                    ? Markup.button.callback('✅ Unblock', `unblock_${id}`)
-                    : Markup.button.callback('🚫 Block', `block_${id}`)
+        reply_markup: {
+            inline_keyboard: [
+                [user.blocked
+                    ? { text: '✅ Unblock', callback_data: `unblock_${id}` }
+                    : { text: '🚫 Block', callback_data: `block_${id}` }],
+                [{ text: '⬅️ Back to List', callback_data: 'admin_users' }]
             ]
-        ])
+        }
     }).catch(() => { });
 });
 
-
-
-// --- BLOCK HANDLER ---
+// ── Block User ──
 bot.action(/block_(.+)/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     const id = ctx.match[1];
-
     if (Number(id) === ADMIN_ID) return ctx.answerCbQuery("❌ Cannot block yourself.");
 
     try {
         await db.run('UPDATE users SET blocked = 1 WHERE chatId = ?', [id]);
-        const user = await getUser(id); // Using the helper function above
+        const user = await getUser(id);
 
         await ctx.answerCbQuery("User blocked 🚫");
+
         return ctx.editMessageText(
-            `👤 Name: ${user.name || 'N/A'}\n📞 Phone: ${user.phone || 'N/A'}\n🌍 Lang: ${user.lang}\n🛡 Status: 🚫 Blocked`,
+            `👤 Name: ${user.name || 'N/A'}
+📞 Phone: ${user.phone || 'N/A'}
+🌍 Lang: ${user.lang || 'N/A'}
+🛡 Status: 🚫 Blocked`,
             {
-                ...Markup.inlineKeyboard([[Markup.button.callback('✅ Unblock', `unblock_${id}`)]])
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '✅ Unblock', callback_data: `unblock_${id}` }],
+                        [{ text: '⬅️ Back to List', callback_data: 'admin_users' }]
+                    ]
+                }
             }
-        ).catch(() => { }); // Catch "message not modified" errors
+        ).catch(() => { });
     } catch (err) {
         console.error(err);
         ctx.reply("Error blocking user.");
     }
 });
+
+// ── Unblock User ──
 bot.action(/unblock_(.+)/, async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     const id = ctx.match[1];
@@ -334,7 +354,6 @@ bot.action(/unblock_(.+)/, async (ctx) => {
 
         await ctx.answerCbQuery("User unblocked ✅");
 
-        // Overwrite keyboard fully
         return ctx.editMessageText(
             `👤 Name: ${user.name || 'N/A'}
 📞 Phone: ${user.phone || 'N/A'}
@@ -355,28 +374,21 @@ bot.action(/unblock_(.+)/, async (ctx) => {
     }
 });
 
+// ── Export ──
 bot.action('admin_export', async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return ctx.answerCbQuery("Unauthorized");
 
     try {
-        // SQL JOIN: Get data from uploads and join the phone number from the users table
         const data = await db.all(`
-            SELECT 
-                u.userName, 
-                u.chatId, 
-                u.fileId, 
-                u.timestamp, 
-                usr.phone 
+            SELECT u.userName, u.chatId, u.fileId, u.timestamp, usr.phone 
             FROM uploads u
             LEFT JOIN users usr ON u.chatId = usr.chatId
         `);
 
-        if (data.length === 0) return ctx.answerCbQuery("No data to export!");
+        if (!data.length) return ctx.answerCbQuery("No data to export!");
 
         const wb = new ExcelJS.Workbook();
         const sheet = wb.addWorksheet('All Uploads');
-
-        // Define Columns
         sheet.columns = [
             { header: 'User Name', key: 'userName', width: 20 },
             { header: 'Chat ID', key: 'chatId', width: 15 },
@@ -385,31 +397,29 @@ bot.action('admin_export', async (ctx) => {
             { header: 'Date/Time', key: 'timestamp', width: 20 }
         ];
 
-        // Add rows to the sheet
         data.forEach(row => {
             sheet.addRow({
                 userName: row.userName,
                 chatId: row.chatId,
-                phone: row.phone || 'N/A', // Shows N/A if phone is missing
+                phone: row.phone || 'N/A',
                 fileId: row.fileId,
                 timestamp: row.timestamp
             });
         });
 
         const buffer = await wb.xlsx.writeBuffer();
-
         await ctx.answerCbQuery("Exporting...");
-        return await ctx.replyWithDocument({
+        return ctx.replyWithDocument({
             source: buffer,
             filename: `uploads_report_${new Date().toISOString().split('T')[0]}.xlsx`
         });
-
     } catch (err) {
-        console.error("Export Error:", err);
+        console.error(err);
         return ctx.reply("❌ Failed to generate Excel report.");
     }
 });
 
+// ── Broadcast ──
 bot.action('admin_broadcast', async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
 
@@ -417,14 +427,13 @@ bot.action('admin_broadcast', async (ctx) => {
     const lang = user?.lang || '🇺🇸 EN';
 
     ctx.session.step = 'BROADCAST';
-
     await ctx.answerCbQuery();
-
     return ctx.reply(
         strings[lang].broadcastAsk,
         Markup.keyboard([['❌ Cancel']]).resize()
     );
 });
+
 
 /* ===========================
    ERROR HANDLER
