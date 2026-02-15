@@ -348,25 +348,59 @@ bot.action(/unblock_(.+)/, async (ctx) => {
     );
 });
 
-
 bot.action('admin_export', async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
+    if (ctx.from.id !== ADMIN_ID) return ctx.answerCbQuery("Unauthorized");
 
-    const data = await db.all('SELECT * FROM uploads');
-    const wb = new ExcelJS.Workbook();
-    const sheet = wb.addWorksheet('Data');
+    try {
+        // SQL JOIN: Get data from uploads and join the phone number from the users table
+        const data = await db.all(`
+            SELECT 
+                u.userName, 
+                u.chatId, 
+                u.fileId, 
+                u.timestamp, 
+                usr.phone 
+            FROM uploads u
+            LEFT JOIN users usr ON u.chatId = usr.chatId
+        `);
 
-    sheet.columns = [
-        { header: 'Name', key: 'userName' },
-        { header: 'Chat ID', key: 'chatId' },
-        { header: 'Phone', key: 'phone' },
-        { header: 'File ID', key: 'fileId' }
-    ];
+        if (data.length === 0) return ctx.answerCbQuery("No data to export!");
 
-    data.forEach(d => sheet.addRow(d));
-    const buffer = await wb.xlsx.writeBuffer();
+        const wb = new ExcelJS.Workbook();
+        const sheet = wb.addWorksheet('All Uploads');
 
-    await ctx.replyWithDocument({ source: buffer, filename: 'data.xlsx' });
+        // Define Columns
+        sheet.columns = [
+            { header: 'User Name', key: 'userName', width: 20 },
+            { header: 'Chat ID', key: 'chatId', width: 15 },
+            { header: 'Phone Number', key: 'phone', width: 15 },
+            { header: 'File ID', key: 'fileId', width: 35 },
+            { header: 'Date/Time', key: 'timestamp', width: 20 }
+        ];
+
+        // Add rows to the sheet
+        data.forEach(row => {
+            sheet.addRow({
+                userName: row.userName,
+                chatId: row.chatId,
+                phone: row.phone || 'N/A', // Shows N/A if phone is missing
+                fileId: row.fileId,
+                timestamp: row.timestamp
+            });
+        });
+
+        const buffer = await wb.xlsx.writeBuffer();
+
+        await ctx.answerCbQuery("Exporting...");
+        return await ctx.replyWithDocument({
+            source: buffer,
+            filename: `uploads_report_${new Date().toISOString().split('T')[0]}.xlsx`
+        });
+
+    } catch (err) {
+        console.error("Export Error:", err);
+        return ctx.reply("❌ Failed to generate Excel report.");
+    }
 });
 
 bot.action('admin_broadcast', async (ctx) => {
