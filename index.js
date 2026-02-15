@@ -194,7 +194,8 @@ bot.on('message', async (ctx) => {
     /* ADMIN COMMAND */
     if (chatId === ADMIN_ID && text === '/admin') {
         return showAdmin(ctx);
-    }/* BROADCAST */
+    }
+    /* BROADCAST */
     if (ctx.session?.step === 'BROADCAST' && chatId === ADMIN_ID) {
 
         const user = await getUser(chatId);
@@ -206,8 +207,6 @@ bot.on('message', async (ctx) => {
             return ctx.reply("❌ Cancelled.", Markup.removeKeyboard());
         }
 
-        if (!text) return;
-
         const users = await db.all(
             'SELECT chatId FROM users WHERE blocked = 0'
         );
@@ -217,7 +216,12 @@ bot.on('message', async (ctx) => {
 
         for (const u of users) {
             try {
-                await ctx.telegram.sendMessage(u.chatId, text);
+                // Forward ANY message type
+                await ctx.telegram.copyMessage(
+                    u.chatId,
+                    chatId,
+                    ctx.message.message_id
+                );
                 success++;
             } catch {
                 failed++;
@@ -229,11 +233,12 @@ bot.on('message', async (ctx) => {
         return ctx.reply(
             `📢 Broadcast finished
 
-✅ Sent: ${success}
-❌ Failed: ${failed}`,
+        ✅ Sent: ${success}
+        ❌ Failed: ${failed}`,
             Markup.removeKeyboard()
         );
     }
+
 });
 
 /* ===========================
