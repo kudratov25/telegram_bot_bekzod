@@ -123,21 +123,62 @@ async function handleAdmin(ctx) {
     ]);
     return ctx.reply(strings['🇺🇸 EN'].adminMenu, menu);
 }
-
 bot.action('admin_users', async (ctx) => {
-    const users = await db.all('SELECT * FROM users');
-    if (users.length === 0) return ctx.answerCbQuery("No users found.");
+    try {
+        const users = await db.all('SELECT * FROM users');
+        if (users.length === 0) return ctx.answerCbQuery("No users found.");
 
-    // Create a button for each user
-    const buttons = users.map(u => [
-        Markup.button.callback(
-            `${u.blocked ? '🚫' : '👤'} ${u.name || 'No Name'} (${u.chatId})`,
-            `view_user:${u.chatId}`
-        )
-    ]);
+        const buttons = users.map(u => [
+            Markup.button.callback(
+                `${u.blocked ? '🚫' : '👤'} ${u.name || 'No Name'}`,
+                `user_info_${u.chatId}`
+            )
+        ]);
 
-    await ctx.answerCbQuery();
-    return ctx.reply("📂 **Select a user to see full details:**", Markup.inlineKeyboard(buttons));
+        await ctx.answerCbQuery();
+        return ctx.reply("📂 **Click a name to see their full data:**", Markup.inlineKeyboard(buttons));
+    } catch (err) {
+        console.error(err);
+        ctx.reply("❌ Error loading user list.");
+    }
+});
+
+bot.action(/user_info_(.+)/, async (ctx) => {
+    try {
+        const targetId = ctx.match[1];
+        const user = await db.get('SELECT * FROM users WHERE chatId = ?', [targetId]);
+
+        if (!user) {
+            return ctx.answerCbQuery("User not found!");
+        }
+
+        const details = [
+            `📑 **FULL USER DATA**`,
+            `━━━━━━━━━━━━━━`,
+            `👤 **Name:** ${user.name || 'N/A'}`,
+            `🆔 **Chat ID:** \`${user.chatId}\``,
+            `📞 **Phone:** ${user.phone || 'Not shared'}`,
+            `🌍 **Language:** ${user.lang || 'N/A'}`,
+            `🛡 **Status:** ${user.blocked ? '🚫 BLOCKED' : '✅ ACTIVE'}`,
+            `━━━━━━━━━━━━━━`
+        ].join('\n');
+
+        const controls = Markup.inlineKeyboard([
+            [
+                user.blocked
+                    ? Markup.button.callback('✅ Unblock', `unblock_${targetId}`)
+                    : Markup.button.callback('🚫 Block', `block_${targetId}`)
+            ],
+            [Markup.button.callback('⬅️ Back to List', 'admin_users')]
+        ]);
+
+        await ctx.answerCbQuery();
+        return ctx.replyWithMarkdown(details, controls);
+
+    } catch (err) {
+        console.error("Detail Error:", err);
+        ctx.reply("❌ Error fetching details.");
+    }
 });
 
 bot.action('admin_export', async (ctx) => {
