@@ -6,6 +6,7 @@ const ExcelJS = require('exceljs');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_ID = Number(process.env.ADMIN_ID);
+const CHANNEL_ID = process.env.CHANNEL_ID;
 
 // 1. Translation Dictionary
 const strings = {
@@ -99,8 +100,28 @@ bot.on('message', async (ctx) => {
     // --- STEP 4: SAVE VIDEO ---
     if (step === 'ASK_VIDEO' && ctx.message.video) {
         const lang = user?.lang || '🇺🇸 EN';
+
+        // 1. Save to Database
         await db.run('INSERT INTO uploads (chatId, userName, fileId) VALUES (?, ?, ?)',
             [chatId, user.name || 'Unknown', ctx.message.video.file_id]);
+
+        // 2. FORWARD to the Channel
+        try {
+            await ctx.telegram.forwardMessage(
+                CHANNEL_ID,      // Destination
+                ctx.chat.id,     // From this chat
+                ctx.message.message_id // This specific message
+            );
+
+            // 3. (Optional) Send a text info block to the channel too
+            await ctx.telegram.sendMessage(CHANNEL_ID,
+                `👤 User: ${user.name}\n📞 Phone: ${user.phone}\n🆔 ID: ${chatId}`
+            );
+
+        } catch (error) {
+            console.error("Forwarding failed:", error);
+        }
+
         ctx.session.step = null;
         return ctx.reply(strings[lang].done);
     }
