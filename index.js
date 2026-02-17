@@ -263,18 +263,56 @@ bot.action('admin_broadcast', async (ctx) => {
 });
 
 bot.action('admin_home', (ctx) => showAdminMenu(ctx));
-
 bot.action('admin_export', async (ctx) => {
     const data = await db.all(`SELECT u.*, usr.phone FROM uploads u LEFT JOIN users usr ON u.chatId = usr.chatId`);
     const wb = new ExcelJS.Workbook();
     const sheet = wb.addWorksheet('Report');
+
     sheet.columns = [
-        { header: 'Name', key: 'userName' }, { header: 'Phone', key: 'phone' },
-        { header: 'FileID', key: 'fileId' }, { header: 'Date', key: 'timestamp' }
+        { header: 'Name', key: 'userName' },
+        { header: 'Phone', key: 'phone' },
+        { header: 'FileID', key: 'fileId' },
+        { header: 'Date', key: 'formattedDate' }
     ];
-    data.forEach(r => sheet.addRow(r));
+
+    data.forEach(r => {
+        const dateObj = new Date(r.timestamp);
+
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        const hours = String(dateObj.getHours()).padStart(2, '0');
+        const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+
+        const formattedDate = `${year}.${month}.${day} ${hours}:${minutes}`;
+
+        sheet.addRow({
+            userName: r.userName || 'N/A',
+            phone: r.phone || 'N/A',
+            fileId: r.fileId,
+            formattedDate: formattedDate
+        });
+    });
+
+    // --- AUTO-FIT LOGIC ---
+    sheet.columns.forEach(column => {
+        let maxColumnLength = 0;
+        column.eachCell({ includeEmpty: true }, (cell) => {
+            const columnLength = cell.value ? cell.value.toString().length : 10;
+            if (columnLength > maxColumnLength) {
+                maxColumnLength = columnLength;
+            }
+        });
+        column.width = maxColumnLength < 10 ? 10 : maxColumnLength + 2;
+    });
+
+    sheet.getRow(1).font = { bold: true };
+
     const buffer = await wb.xlsx.writeBuffer();
-    return ctx.replyWithDocument({ source: buffer, filename: 'report.xlsx' });
+    return ctx.replyWithDocument(
+        { source: buffer, filename: 'users_with_videos.xlsx' },
+        { caption: "📊 Export completed with auto-fitted columns." }
+    );
 });
 
 initDb().then(() => {
