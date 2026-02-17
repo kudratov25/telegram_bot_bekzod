@@ -5,7 +5,7 @@ const { open } = require('sqlite');
 const ExcelJS = require('exceljs');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
-const ADMIN_ID = Number(process.env.ADMIN_ID);
+const SUPER_ADMIN_ID = String(process.env.SUPER_ADMIN_ID); // Set this in .env
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
 let db;
@@ -21,9 +21,8 @@ const strings = {
         done: "✅ Hammasi tayyor, rahmat!",
         blocked: "🚫 Siz bloklangansiz.",
         error: "❌ Xatolik yuz berdi.",
-        broadcastAsk: "Yubormoqchi bo'lgan xabarni yozing (yoki bekor qilish uchun /cancel):",
+        broadcastAsk: "Xabarni yozing:",
         adminMenu: "🛠 Admin paneli:",
-        noUsers: "Foydalanuvchilar topilmadi.",
         manageUsers: "👥 Foydalanuvchilar",
         exportExcel: "📥 Excel yuklash",
         globalBroadcast: "📢 Xabar yuborish",
@@ -31,24 +30,26 @@ const strings = {
         userStatus: "Holati",
         active: "Faol",
         isBlocked: "Bloklangan",
-        unblock: "✅ Blokdan ochish",
+        unblock: "✅ Ochish",
         block: "🚫 Bloklash",
-        selectUser: "Boshqarish uchun foydalanuvchini tanlang:",
-        broadcastStart: "🚀 Xabar yuborish boshlandi...",
-        broadcastDone: "📢 Tugatildi! Yuborildi: "
+        selectUser: "Foydalanuvchini tanlang:",
+        broadcastDone: "📢 Yuborildi: ",
+        askPass: "Admin parolini kiriting:",
+        adminSuccess: "🎉 Tabriklaymiz! Endi siz adminsiz. /admin buyrug'ini ishlating.",
+        wrongPass: "❌ Parol noto'g'ri!",
+        changePass: "🔐 Parolni o'zgartirish"
     },
     '🇷🇺 RU': {
         welcome: "Выберите язык:",
-        askPhone: "Пожалуйста, отправьте свой номер:",
+        askPhone: "Отправьте свой номер:",
         btnPhone: "📱 Отправить номер",
         askName: "Как вас зовут?",
-        askVideo: "Теперь загрузите видео:",
-        done: "✅ Готово, спасибо!",
+        askVideo: "Загрузите видео:",
+        done: "✅ Готово!",
         blocked: "🚫 Вы заблокированы.",
-        error: "❌ Происходила ошибка.",
-        broadcastAsk: "Введите сообщение для рассылки (или /cancel):",
+        error: "❌ Ошибка.",
+        broadcastAsk: "Введите сообщение:",
         adminMenu: "🛠 Админ панель:",
-        noUsers: "Пользователи не найдены.",
         manageUsers: "👥 Пользователи",
         exportExcel: "📥 Экспорт Excel",
         globalBroadcast: "📢 Рассылка",
@@ -59,8 +60,11 @@ const strings = {
         unblock: "✅ Разблокировать",
         block: "🚫 Блокировать",
         selectUser: "Выберите пользователя:",
-        broadcastStart: "🚀 Рассылка началась...",
-        broadcastDone: "📢 Готово! Отправлено: "
+        broadcastDone: "📢 Отправлено: ",
+        askPass: "Введите пароль админа:",
+        adminSuccess: "🎉 Теперь вы админ! Используйте /admin.",
+        wrongPass: "❌ Неверный пароль!",
+        changePass: "🔐 Изменить пароль"
     },
     '🇺🇸 EN': {
         welcome: "Choose language:",
@@ -71,9 +75,8 @@ const strings = {
         done: "✅ Completed. Thank you!",
         blocked: "🚫 You are blocked.",
         error: "❌ Something went wrong.",
-        broadcastAsk: "Type message to broadcast (or /cancel):",
+        broadcastAsk: "Type message:",
         adminMenu: "🛠 Admin panel:",
-        noUsers: "No users found.",
         manageUsers: "👥 Manage Users",
         exportExcel: "📥 Export Excel",
         globalBroadcast: "📢 Global Broadcast",
@@ -83,9 +86,12 @@ const strings = {
         isBlocked: "Blocked",
         unblock: "✅ Unblock",
         block: "🚫 Block",
-        selectUser: "Select a user to manage:",
-        broadcastStart: "🚀 Starting broadcast...",
-        broadcastDone: "📢 Done! Sent to: "
+        selectUser: "Select a user:",
+        broadcastDone: "📢 Sent to: ",
+        askPass: "Enter admin password:",
+        adminSuccess: "🎉 Success! You are an admin. Use /admin.",
+        wrongPass: "❌ Wrong password!",
+        changePass: "🔐 Change Password"
     }
 };
 
@@ -98,7 +104,8 @@ async function initDb() {
             lang TEXT DEFAULT '🇺🇸 EN',
             phone TEXT,
             name TEXT,
-            blocked INTEGER DEFAULT 0
+            blocked INTEGER DEFAULT 0,
+            isAdmin INTEGER DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS uploads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,12 +114,19 @@ async function initDb() {
             fileId TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_password', '12345');
     `);
 }
 
 // --- UTILS ---
 const escapeMD = (text = '') => text.toString().replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&');
-const getUser = (chatId) => db.get('SELECT * FROM users WHERE chatId = ?', [chatId]);
+const getUser = (chatId) => db.get('SELECT * FROM users WHERE chatId = ?', [String(chatId)]);
+const isUserAdmin = (user) => user && (user.isAdmin === 1 || String(user.chatId) === SUPER_ADMIN_ID);
+const getAdminPass = async () => (await db.get('SELECT value FROM settings WHERE key = "admin_password"')).value;
 
 // --- MIDDLEWARE & COMMANDS ---
 bot.use(session());
@@ -124,198 +138,212 @@ bot.start(async (ctx) => {
     );
 });
 
-bot.command('admin', (ctx) => showAdminMenu(ctx));
+bot.command('setadmin', async (ctx) => {
+    const user = await getUser(ctx.from.id);
+    const s = strings[user?.lang || '🇺🇸 EN'];
+    ctx.session = { step: 'WAIT_PASS' };
+    return ctx.reply(s.askPass);
+});
+
+bot.command('admin', async (ctx) => {
+    const user = await getUser(ctx.from.id);
+    if (isUserAdmin(user)) return showAdminMenu(ctx, user);
+});
+
 bot.command('cancel', (ctx) => {
     ctx.session = null;
-    return ctx.reply("Cancelled / Bekor qilindi.", Markup.removeKeyboard());
+    return ctx.reply("Cancelled.", Markup.removeKeyboard());
 });
 
 // --- MAIN MESSAGE HANDLER ---
 bot.on('message', async (ctx) => {
-    const chatId = ctx.chat.id;
+    const chatId = String(ctx.chat.id);
     const text = ctx.message.text;
     const step = ctx.session?.step;
-
-    // Fetch user and fallback to EN if not found
     let user = await getUser(chatId);
-    const lang = user?.lang || '🇺🇸 EN';
-    const s = strings[lang];
+    const s = strings[user?.lang || '🇺🇸 EN'];
 
-    if (user?.blocked && chatId !== ADMIN_ID) {
-        return ctx.reply(s.blocked);
+    if (user?.blocked && !isUserAdmin(user)) return ctx.reply(s.blocked);
+
+    // Admin Password Check
+    if (step === 'WAIT_PASS') {
+        const dbPass = await getAdminPass();
+        if (text === dbPass) {
+            await db.run('UPDATE users SET isAdmin = 1 WHERE chatId = ?', [chatId]);
+            ctx.session = null;
+            return ctx.reply(s.adminSuccess);
+        } else {
+            ctx.session = null;
+            return ctx.reply(s.wrongPass);
+        }
     }
 
-    // 1. LANGUAGE SELECTION
+    // Change Admin Password Logic (Super Admin only)
+    if (step === 'SET_NEW_PASS' && chatId === SUPER_ADMIN_ID) {
+        await db.run('UPDATE settings SET value = ? WHERE key = "admin_password"', [text]);
+        ctx.session = null;
+        return ctx.reply("✅ Password updated!");
+    }
+
+    // 1. LANGUAGE
     if (step === 'LANG' && strings[text]) {
         await db.run(`INSERT INTO users (chatId, lang) VALUES (?, ?) ON CONFLICT(chatId) DO UPDATE SET lang=excluded.lang`, [chatId, text]);
         ctx.session.step = 'PHONE';
         return ctx.reply(strings[text].askPhone, Markup.keyboard([[Markup.button.contactRequest(strings[text].btnPhone)]]).oneTime().resize());
     }
 
-    // 2. PHONE SELECTION
+    // 2. PHONE
     if (step === 'PHONE') {
-        let phoneNumber = null;
-        if (ctx.message.contact) {
-            if (ctx.message.contact.user_id !== ctx.from.id) return ctx.reply(s.error);
-            phoneNumber = ctx.message.contact.phone_number;
-        } else if (text) {
-            const cleaned = text.replace(/\D/g, '');
-            if (cleaned.length >= 9) phoneNumber = text;
-        }
-
-        if (phoneNumber) {
-            await db.run('UPDATE users SET phone=? WHERE chatId=?', [phoneNumber, chatId]);
+        let phone = ctx.message.contact ? ctx.message.contact.phone_number : (text?.length >= 9 ? text : null);
+        if (phone) {
+            await db.run('UPDATE users SET phone=? WHERE chatId=?', [phone, chatId]);
             ctx.session.step = 'NAME';
             return ctx.reply(s.askName, Markup.removeKeyboard());
         }
     }
 
-    // 3. NAME SELECTION
+    // 3. NAME
     if (step === 'NAME' && text) {
         await db.run('UPDATE users SET name=? WHERE chatId=?', [text, chatId]);
         ctx.session.step = 'VIDEO';
         return ctx.reply(s.askVideo);
     }
 
-    // 4. VIDEO UPLOAD
+    // 4. VIDEO
     if (step === 'VIDEO' && ctx.message.video) {
         try {
             await ctx.telegram.sendVideo(CHANNEL_ID, ctx.message.video.file_id, {
-                caption: `📹 *New Submission*\n👤 Name: ${escapeMD(user.name)}\n📞 Phone: ${escapeMD(user.phone)}\n🆔 ID: \`${chatId}\``,
+                caption: `📹 *New Submission*\n👤 Name: ${escapeMD(user.name)}\n📞 Phone: ${escapeMD(user.phone)}`,
                 parse_mode: 'MarkdownV2'
             });
             await db.run('INSERT INTO uploads (chatId, userName, fileId) VALUES (?, ?, ?)', [chatId, user.name, ctx.message.video.file_id]);
             ctx.session = null;
             return ctx.reply(s.done);
-        } catch (e) {
-            return ctx.reply(s.error);
-        }
+        } catch (e) { return ctx.reply(s.error); }
     }
 
-    // 5. ADMIN BROADCAST
-    if (step === 'BROADCAST' && chatId === ADMIN_ID) {
-        const users = await db.all('SELECT chatId FROM users WHERE blocked = 0');
+    // 5. BROADCAST
+    if (step === 'BROADCAST' && isUserAdmin(user)) {
+        const all = await db.all('SELECT chatId FROM users WHERE blocked = 0');
         ctx.session = null;
         let count = 0;
-        ctx.reply(s.broadcastStart);
-        for (const u of users) {
-            try {
-                await ctx.telegram.copyMessage(u.chatId, ctx.chat.id, ctx.message.message_id);
-                count++;
-            } catch (err) { console.error(err); }
+        for (const u of all) {
+            try { await ctx.telegram.copyMessage(u.chatId, ctx.chat.id, ctx.message.message_id); count++; } catch (e) { }
         }
-        return ctx.reply(`${s.broadcastDone}${count}`, Markup.removeKeyboard());
+        return ctx.reply(`${s.broadcastDone}${count}`);
     }
 });
 
-// --- ADMIN PANEL FUNCTIONS ---
-async function showAdminMenu(ctx) {
-    if (ctx.from.id !== ADMIN_ID) return;
-    const user = await getUser(ctx.from.id);
-    const s = strings[user?.lang || '🇺🇸 EN'];
-
-    const buttons = Markup.inlineKeyboard([
-        [Markup.button.callback(s.manageUsers, 'admin_users')],
+// --- ADMIN PANEL ---
+async function showAdminMenu(ctx, user) {
+    const s = strings[user.lang || '🇺🇸 EN'];
+    const buttons = [
+        [Markup.button.callback(s.manageUsers, 'admin_users_0')],
         [Markup.button.callback(s.exportExcel, 'admin_export')],
         [Markup.button.callback(s.globalBroadcast, 'admin_broadcast')]
-    ]);
+    ];
 
-    if (ctx.callbackQuery) {
-        return ctx.editMessageText(s.adminMenu, buttons).catch(() => { });
+    if (String(ctx.from.id) === SUPER_ADMIN_ID) {
+        buttons.push([Markup.button.callback(s.changePass, 'admin_change_pass')]);
     }
-    return ctx.reply(s.adminMenu, buttons);
+
+    const keyboard = Markup.inlineKeyboard(buttons);
+    return ctx.callbackQuery ? ctx.editMessageText(s.adminMenu, keyboard) : ctx.reply(s.adminMenu, keyboard);
 }
 
-bot.action('admin_users', async (ctx) => {
-    const admin = await getUser(ctx.from.id);
-    const s = strings[admin.lang];
-    const users = await db.all('SELECT * FROM users LIMIT 50');
-    const buttons = users.map(u => [Markup.button.callback(`${u.blocked ? '🚫' : '👤'} ${u.name || u.chatId}`, `info_${u.chatId}`)]);
-    buttons.push([Markup.button.callback(s.back, 'admin_home')]);
-    return ctx.editMessageText(s.selectUser, Markup.inlineKeyboard(buttons));
+bot.action('admin_change_pass', async (ctx) => {
+    if (String(ctx.from.id) !== SUPER_ADMIN_ID) return ctx.answerCbQuery("Denied");
+    ctx.session = { step: 'SET_NEW_PASS' };
+    return ctx.editMessageText("Enter new admin password:");
 });
 
-bot.action(/info_(.+)/, async (ctx) => {
-    const admin = await getUser(ctx.from.id);
-    const s = strings[admin.lang];
-    const id = ctx.match[1];
-    const u = await getUser(id);
+bot.action(/admin_users_(\d+)/, async (ctx) => {
+    const user = await getUser(ctx.from.id);
+    if (!isUserAdmin(user)) return;
+    const page = parseInt(ctx.match[1]);
+    const limit = 10;
+    const offset = page * limit;
 
-    const text = `👤 *User Info*\nName: ${u.name}\nPhone: ${u.phone}\nID: \`${u.chatId}\`\n${s.userStatus}: ${u.blocked ? s.isBlocked : s.active}`;
-    const buttons = [
-        [Markup.button.callback(u.blocked ? s.unblock : s.block, `${u.blocked ? 'unblock' : 'block'}_${id}`)],
-        [Markup.button.callback(s.back, 'admin_users')]
-    ];
+    const users = await db.all('SELECT * FROM users LIMIT ? OFFSET ?', [limit, offset]);
+    const total = (await db.get('SELECT COUNT(*) as count FROM users')).count;
+
+    const buttons = users.map(u => [Markup.button.callback(`${u.blocked ? '🚫' : '👤'} ${u.name || u.chatId}`, `info_${u.chatId}_${page}`)]);
+
+    const nav = [];
+    if (page > 0) nav.push(Markup.button.callback('⬅️', `admin_users_${page - 1}`));
+    if (offset + limit < total) nav.push(Markup.button.callback('➡️', `admin_users_${page + 1}`));
+
+    if (nav.length) buttons.push(nav);
+    buttons.push([Markup.button.callback(strings[user.lang].back, 'admin_home')]);
+
+    return ctx.editMessageText(strings[user.lang].selectUser, Markup.inlineKeyboard(buttons));
+});
+
+bot.action(/info_(.+)_(\d+)/, async (ctx) => {
+    const admin = await getUser(ctx.from.id);
+    const [_, id, page] = ctx.match;
+    const u = await getUser(id);
+    const s = strings[admin.lang];
+
+    const text = `👤 *User Info*\nName: ${u.name}\nPhone: ${u.phone}\nRole: ${u.isAdmin ? 'Admin' : 'User'}\nStatus: ${u.blocked ? s.isBlocked : s.active}`;
+    const buttons = [[Markup.button.callback(u.blocked ? s.unblock : s.block, `toggle_block_${id}_${page}`)]];
+
+    // Only Super Admin can demote other admins
+    if (String(ctx.from.id) === SUPER_ADMIN_ID && String(u.chatId) !== SUPER_ADMIN_ID) {
+        buttons.push([Markup.button.callback(u.isAdmin ? "Remove Admin" : "Make Admin", `toggle_role_${id}_${page}`)]);
+    }
+
+    buttons.push([Markup.button.callback(s.back, `admin_users_${page}`)]);
     return ctx.editMessageText(text, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) });
 });
 
-bot.action(/(block|unblock)_(.+)/, async (ctx) => {
-    await db.run('UPDATE users SET blocked = ? WHERE chatId = ?', [ctx.match[1] === 'block' ? 1 : 0, ctx.match[2]]);
-    ctx.answerCbQuery();
-    return showAdminMenu(ctx);
+bot.action(/toggle_(block|role)_(.+)_(\d+)/, async (ctx) => {
+    const [_, type, id, page] = ctx.match;
+    const u = await getUser(id);
+    if (type === 'block') {
+        await db.run('UPDATE users SET blocked = ? WHERE chatId = ?', [u.blocked ? 0 : 1, id]);
+    } else if (type === 'role' && String(ctx.from.id) === SUPER_ADMIN_ID) {
+        await db.run('UPDATE users SET isAdmin = ? WHERE chatId = ?', [u.isAdmin ? 0 : 1, id]);
+    }
+    ctx.answerCbQuery("Updated");
+    // Simple way to refresh: trigger info again
+    ctx.match = [null, null, id, page];
+    return ctx.editMessageText("Updating...").then(() => {
+        // Redraw info screen
+        return bot.handleUpdate(ctx.update);
+    }).catch(() => { });
 });
+
+bot.action('admin_home', async (ctx) => showAdminMenu(ctx, await getUser(ctx.from.id)));
 
 bot.action('admin_broadcast', async (ctx) => {
-    const admin = await getUser(ctx.from.id);
     ctx.session = { step: 'BROADCAST' };
-    await ctx.answerCbQuery();
-    return ctx.reply(strings[admin.lang].broadcastAsk);
+    return ctx.reply(strings[(await getUser(ctx.from.id)).lang].broadcastAsk);
 });
 
-bot.action('admin_home', (ctx) => showAdminMenu(ctx));
 bot.action('admin_export', async (ctx) => {
     const data = await db.all(`SELECT u.*, usr.phone FROM uploads u LEFT JOIN users usr ON u.chatId = usr.chatId`);
     const wb = new ExcelJS.Workbook();
     const sheet = wb.addWorksheet('Report');
-
     sheet.columns = [
         { header: 'Name', key: 'userName' },
         { header: 'Phone', key: 'phone' },
-        { header: 'FileID', key: 'fileId' },
-        { header: 'Date', key: 'formattedDate' }
+        { header: 'Date', key: 'date' }
     ];
-
     data.forEach(r => {
-        const dateObj = new Date(r.timestamp);
-
-        const year = dateObj.getFullYear();
-        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-        const day = String(dateObj.getDate()).padStart(2, '0');
-        const hours = String(dateObj.getHours()).padStart(2, '0');
-        const minutes = String(dateObj.getMinutes()).padStart(2, '0');
-
-        const formattedDate = `${year}.${month}.${day} ${hours}:${minutes}`;
-
         sheet.addRow({
-            userName: r.userName || 'N/A',
-            phone: r.phone || 'N/A',
-            fileId: r.fileId,
-            formattedDate: formattedDate
+            userName: r.userName,
+            phone: r.phone,
+            date: new Date(r.timestamp).toLocaleString()
         });
     });
-
-    // --- AUTO-FIT LOGIC ---
-    sheet.columns.forEach(column => {
-        let maxColumnLength = 0;
-        column.eachCell({ includeEmpty: true }, (cell) => {
-            const columnLength = cell.value ? cell.value.toString().length : 10;
-            if (columnLength > maxColumnLength) {
-                maxColumnLength = columnLength;
-            }
-        });
-        column.width = maxColumnLength < 10 ? 10 : maxColumnLength + 2;
-    });
-
-    sheet.getRow(1).font = { bold: true };
-
+    // Auto-width
+    sheet.columns.forEach(col => { col.width = 20; });
     const buffer = await wb.xlsx.writeBuffer();
-    return ctx.replyWithDocument(
-        { source: buffer, filename: 'xisobot.xlsx' },
-        { caption: "Video yuborganlar" }
-    );
+    return ctx.replyWithDocument({ source: buffer, filename: 'report.xlsx' });
 });
 
 initDb().then(() => {
     bot.launch();
-    console.log("✅ Bot is running properly");
+    console.log("✅ Bot is online");
 });
