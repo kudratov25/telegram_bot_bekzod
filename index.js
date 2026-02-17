@@ -98,6 +98,20 @@ const strings = {
 // --- DATABASE HELPER ---
 async function initDb() {
     db = await open({ filename: './database.sqlite', driver: sqlite3.Database });
+    try {
+        await db.exec(`ALTER TABLE users ADD COLUMN isAdmin INTEGER DEFAULT 0`);
+        console.log("✅ Column isAdmin added to users table.");
+    } catch (e) {
+        console.log("ℹ️ Column isAdmin already exists, skipping.");
+    }
+
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_password', '12345');
+    `);
     await db.exec(`
         CREATE TABLE IF NOT EXISTS users (
             chatId TEXT PRIMARY KEY,
