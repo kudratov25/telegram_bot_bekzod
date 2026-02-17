@@ -298,30 +298,37 @@ bot.action(/info_(.+)_(\d+)/, async (ctx) => {
     const [_, id, page] = ctx.match;
     const u = await getUser(id);
     const s = strings[admin.lang];
-
     const text = `👤 *User Info*\nName: ${u.name}\nPhone: ${u.phone}\nRole: ${u.isAdmin ? 'Admin' : 'User'}\nStatus: ${u.blocked ? s.isBlocked : s.active}`;
     const buttons = [[Markup.button.callback(u.blocked ? s.unblock : s.block, `toggle_block_${id}_${page}`)]];
-
-    // Only Super Admin can demote other admins
     if (String(ctx.from.id) === SUPER_ADMIN_ID && String(u.chatId) !== SUPER_ADMIN_ID) {
         buttons.push([Markup.button.callback(u.isAdmin ? "Remove Admin" : "Make Admin", `toggle_role_${id}_${page}`)]);
     }
-
     buttons.push([Markup.button.callback(s.back, `admin_users_${page}`)]);
     return ctx.editMessageText(text, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) });
 });
-
 bot.action(/toggle_(block|role)_(.+)_(\d+)/, async (ctx) => {
     const [_, type, id, page] = ctx.match;
     const admin = await getUser(ctx.from.id);
     const u = await getUser(id);
     const s = strings[admin.lang];
+
     if (type === 'block') {
         await db.run('UPDATE users SET blocked = ? WHERE chatId = ?', [u.blocked ? 0 : 1, id]);
     } else if (type === 'role' && String(ctx.from.id) === SUPER_ADMIN_ID) {
-        await db.run('UPDATE users SET isAdmin = ? WHERE chatId = ?', [u.isAdmin ? 0 : 1, id]);
+        const newRole = u.isAdmin ? 0 : 1;
+        await db.run('UPDATE users SET isAdmin = ? WHERE chatId = ?', [newRole, id]);
+
+        if (newRole === 0) {
+            try {
+                // Forcefully clear session if you are storing session in memory
+                if (ctx.session && ctx.session.chatId === id) ctx.session = null;
+                await ctx.telegram.sendMessage(id, "❌ You are no longer an admin.");
+            } catch (e) { }
+        }
     }
+
     ctx.answerCbQuery("Updated");
+
     const updatedUser = await getUser(id);
     const text = `👤 *User Info*\nName: ${updatedUser.name}\nPhone: ${updatedUser.phone}\nRole: ${updatedUser.isAdmin ? 'Admin' : 'User'}\nStatus: ${updatedUser.blocked ? s.isBlocked : s.active}`;
     const buttons = [[Markup.button.callback(updatedUser.blocked ? s.unblock : s.block, `toggle_block_${id}_${page}`)]];
