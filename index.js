@@ -311,7 +311,7 @@ bot.action('admin_export', async (ctx) => {
     const buffer = await wb.xlsx.writeBuffer();
     return ctx.replyWithDocument(
         { source: buffer, filename: 'users_with_videos.xlsx' },
-        { caption: "📊 Export completed with auto-fitted columns." }
+        { caption: "📊 Video Yuborganlar ro'yxati" }
     );
 });
 
