@@ -313,19 +313,23 @@ bot.action(/info_(.+)_(\d+)/, async (ctx) => {
 
 bot.action(/toggle_(block|role)_(.+)_(\d+)/, async (ctx) => {
     const [_, type, id, page] = ctx.match;
+    const admin = await getUser(ctx.from.id);
     const u = await getUser(id);
+    const s = strings[admin.lang];
     if (type === 'block') {
         await db.run('UPDATE users SET blocked = ? WHERE chatId = ?', [u.blocked ? 0 : 1, id]);
     } else if (type === 'role' && String(ctx.from.id) === SUPER_ADMIN_ID) {
         await db.run('UPDATE users SET isAdmin = ? WHERE chatId = ?', [u.isAdmin ? 0 : 1, id]);
     }
     ctx.answerCbQuery("Updated");
-    // Simple way to refresh: trigger info again
-    ctx.match = [null, null, id, page];
-    return ctx.editMessageText("Updating...").then(() => {
-        // Redraw info screen
-        return bot.handleUpdate(ctx.update);
-    }).catch(() => { });
+    const updatedUser = await getUser(id);
+    const text = `👤 *User Info*\nName: ${updatedUser.name}\nPhone: ${updatedUser.phone}\nRole: ${updatedUser.isAdmin ? 'Admin' : 'User'}\nStatus: ${updatedUser.blocked ? s.isBlocked : s.active}`;
+    const buttons = [[Markup.button.callback(updatedUser.blocked ? s.unblock : s.block, `toggle_block_${id}_${page}`)]];
+    if (String(ctx.from.id) === SUPER_ADMIN_ID && String(updatedUser.chatId) !== SUPER_ADMIN_ID) {
+        buttons.push([Markup.button.callback(updatedUser.isAdmin ? "Remove Admin" : "Make Admin", `toggle_role_${id}_${page}`)]);
+    }
+    buttons.push([Markup.button.callback(s.back, `admin_users_${page}`)]);
+    return ctx.editMessageText(text, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }).catch(() => { });
 });
 
 bot.action('admin_home', async (ctx) => showAdminMenu(ctx, await getUser(ctx.from.id)));
